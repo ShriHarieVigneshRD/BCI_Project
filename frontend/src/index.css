@@ -1,0 +1,191 @@
+@import "tailwindcss";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght.css";
+@import "@fontsource-variable/atkinson-hyperlegible-next/wght-italic.css";
+@import "@fontsource-variable/atkinson-hyperlegible-mono/wght.css";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Design tokens. Light: warm off-white canvas, white cards, deep navy primary.
+ * Dark: near-black canvas, charcoal cards, periwinkle primary. Both modes keep
+ * semantic success / danger / warning tones for scientific status.
+ */
+:root {
+  --c-canvas: #f3f1ec;
+  --c-surface: #fbfaf7;
+  --c-card: #ffffff;
+  --c-subtle: #eeebe5;
+  --c-line: #e4e1da;
+  --c-line-strong: #d3cfc6;
+  --c-ink: #1b1b1f;
+  --c-ink-muted: #4a4a50;
+  --c-ink-subtle: #6f6e73;
+  --c-primary: #1f2b6c;
+  --c-primary-hover: #17215a;
+  --c-on-primary: #ffffff;
+  --c-primary-soft: #e6e8f3;
+  --c-link: #22306f;
+  --c-success: #1e7a46;
+  --c-success-soft: #dff1e5;
+  --c-success-line: #acd8b9;
+  --c-danger: #b42318;
+  --c-danger-soft: #fdecea;
+  --c-danger-line: #f2c4bf;
+  --c-warning: #8a5300;
+  --c-warning-soft: #fcf0d9;
+  --c-warning-line: #ecd29c;
+  --s-card: 0 1px 2px rgb(27 27 31 / 0.04), 0 8px 24px rgb(27 27 31 / 0.06);
+  --s-float: 0 2px 4px rgb(27 27 31 / 0.05), 0 18px 48px rgb(27 27 31 / 0.12);
+
+  --chart-1: #1f2b6c;
+  --chart-2: #b45309;
+  --chart-3: #1e7a46;
+  --chart-4: #b42318;
+  --chart-5: #6d4aae;
+  --chart-6: #0f766e;
+  --chart-7: #64748b;
+  --heat-low: #f6f4ef;
+  --heat-high: #1f2b6c;
+  --div-neg: #b42318;
+  --div-mid: #faf9f6;
+  --div-pos: #1f2b6c;
+  color-scheme: light;
+}
+
+.dark {
+  --c-canvas: #131419;
+  --c-surface: #18191e;
+  --c-card: #1e1f25;
+  --c-subtle: #25262d;
+  --c-line: #2e2f36;
+  --c-line-strong: #3b3c44;
+  --c-ink: #eeebe4;
+  --c-ink-muted: #bdbab3;
+  --c-ink-subtle: #8f8d88;
+  --c-primary: #a3b1f7;
+  --c-primary-hover: #b8c3f9;
+  --c-on-primary: #14151a;
+  --c-primary-soft: #262b45;
+  --c-link: #a9b6f8;
+  --c-success: #7fd49f;
+  --c-success-soft: #173323;
+  --c-success-line: #2d5a3d;
+  --c-danger: #f28b82;
+  --c-danger-soft: #3a1d1b;
+  --c-danger-line: #6e2b26;
+  --c-warning: #f2c46d;
+  --c-warning-soft: #392b12;
+  --c-warning-line: #6a5222;
+  --s-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px rgb(0 0 0 / 0.25);
+  --s-float: 0 2px 6px rgb(0 0 0 / 0.35), 0 18px 48px rgb(0 0 0 / 0.45);
+
+  --chart-1: #a3b1f7;
+  --chart-2: #f2b866;
+  --chart-3: #7fd49f;
+  --chart-4: #f28b82;
+  --chart-5: #c9b3f5;
+  --chart-6: #6fd3c7;
+  --chart-7: #a1a1aa;
+  --heat-low: #1b1c22;
+  --heat-high: #a3b1f7;
+  --div-neg: #f28b82;
+  --div-mid: #23242b;
+  --div-pos: #a3b1f7;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "Atkinson Hyperlegible Next Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4 Variable", "Source Serif Pro", Georgia, serif;
+  --font-mono: "Atkinson Hyperlegible Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-card: var(--c-card);
+  --color-subtle: var(--c-subtle);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-ink: var(--c-ink);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-subtle: var(--c-ink-subtle);
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-on-primary: var(--c-on-primary);
+  --color-primary-soft: var(--c-primary-soft);
+  --color-link: var(--c-link);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+  --color-success-line: var(--c-success-line);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-danger-line: var(--c-danger-line);
+  --color-warning: var(--c-warning);
+  --color-warning-soft: var(--c-warning-soft);
+  --color-warning-line: var(--c-warning-line);
+
+  --shadow-card: var(--s-card);
+  --shadow-float: var(--s-float);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    background: var(--c-canvas);
+    color: var(--c-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100vh;
+  }
+  ::selection {
+    background: var(--c-primary-soft);
+  }
+  :focus-visible {
+    outline: 2px solid var(--c-primary);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  input[type="number"]::-webkit-inner-spin-button {
+    opacity: 0.4;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+    letter-spacing: -0.022em;
+    font-weight: 400;
+  }
+  .link-dotted {
+    color: var(--c-link);
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1.5px;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-line-strong) transparent;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

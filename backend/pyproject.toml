@@ -1,0 +1,54 @@
+[project]
+name = "eegnet-playground-backend"
+version = "1.0.0"
+description = "EEGNet Architecture Playground - FastAPI backend (training, preprocessing, artifacts)"
+readme = "../README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "python-multipart>=0.0.9",
+    "numpy>=1.26,<2.4",
+    "scipy>=1.13",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "mne>=1.8",
+    "pymatreader>=1.0",
+    "matplotlib>=3.9",
+]
+
+[project.optional-dependencies]
+cpu = ["torch>=2.5"]
+cuda = ["torch>=2.5"]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "httpx>=0.27", "edfio>=0.4", "eeglabio>=0.0.3"]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "cuda" }]]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu130", extra = "cuda" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::RuntimeWarning:mne.*", "ignore:Using `httpx` with:Warning"]
+
+[tool.pyrefly]
+search-path = [".", "tests"]
