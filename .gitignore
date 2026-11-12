@@ -1,5 +1,5 @@
 # runtime data (datasets, checkpoints, exports, registry)
-data/
+/data/
 # python
 backend/.venv/
 __pycache__/
@@ -11,3 +11,5 @@ frontend/node_modules/
 frontend/dist/
 # local settings
 .env
+# presentation (kept local)
+ppt/
