@@ -27,6 +27,11 @@ def _project_path(value: str | None, default: Path) -> Path:
 
 _load_dotenv()
 
+if "MPLCONFIGDIR" not in os.environ:
+    _mpl_dir = PROJECT_ROOT / "data" / "cache" / "matplotlib"
+    _mpl_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = str(_mpl_dir)
+
 
 class Settings:
     def __init__(self) -> None:
