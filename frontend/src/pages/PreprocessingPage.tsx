@@ -190,14 +190,21 @@ function PreprocessingBody({ exp }: { exp: Experiment }) {
               <Stage n={1} title="Channels" summary={`${selected.filter((c) => !cfg.channels.bad_channels.includes(c)).length} of ${allCh.length} used`} defaultOpen>
                 <div className="max-h-64 overflow-y-auto rounded-xl border border-line scrollbar-thin">
                   <table className="w-full text-[13px]">
-                    <thead className="sticky top-0 bg-subtle text-left text-ink-subtle"><tr><th className="px-3 py-1.5">Channel</th><th>Use</th><th>Bad</th><th className="pr-3">Map to</th></tr></thead>
+                    <thead className="sticky top-0 z-10 bg-subtle text-left text-ink-subtle">
+                      <tr>
+                        <th className="px-3 py-2 font-semibold">Channel</th>
+                        <th className="px-3 py-2 font-semibold">Use</th>
+                        <th className="px-3 py-2 font-semibold">Bad</th>
+                        <th className="px-3 py-2 pr-4 font-semibold">Map to</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {allCh.map((c) => (
-                        <tr key={c} className="border-t border-line">
-                          <td className="px-3 py-1 font-mono">{c}</td>
-                          <td><input type="checkbox" aria-label={`use ${c}`} className="accent-[var(--c-primary)]" checked={selected.includes(c)} onChange={(e) => set("channels", { selected: e.target.checked ? allCh.filter((x) => selected.includes(x) || x === c) : selected.filter((x) => x !== c) })} /></td>
-                          <td><input type="checkbox" aria-label={`mark ${c} bad`} className="accent-[var(--c-danger)]" checked={cfg.channels.bad_channels.includes(c)} onChange={(e) => set("channels", { bad_channels: e.target.checked ? [...cfg.channels.bad_channels, c] : cfg.channels.bad_channels.filter((x) => x !== c) })} /></td>
-                          <td className="py-1 pr-3"><input aria-label={`rename ${c}`} className="h-7 w-24 rounded-md border border-line bg-card px-1.5 font-mono text-[12px]" placeholder={c} value={cfg.channels.rename[c] ?? ""} onChange={(e) => { const r = { ...cfg.channels.rename }; if (e.target.value) r[c] = e.target.value; else delete r[c]; set("channels", { rename: r }); }} /></td>
+                        <tr key={c} className="border-t border-line transition-colors hover:bg-surface/50">
+                          <td className="px-3 py-1.5 font-mono">{c}</td>
+                          <td className="px-3 py-1.5"><input type="checkbox" aria-label={`use ${c}`} className="accent-[var(--c-primary)]" checked={selected.includes(c)} onChange={(e) => set("channels", { selected: e.target.checked ? allCh.filter((x) => selected.includes(x) || x === c) : selected.filter((x) => x !== c) })} /></td>
+                          <td className="px-3 py-1.5"><input type="checkbox" aria-label={`mark ${c} bad`} className="accent-[var(--c-danger)]" checked={cfg.channels.bad_channels.includes(c)} onChange={(e) => set("channels", { bad_channels: e.target.checked ? [...cfg.channels.bad_channels, c] : cfg.channels.bad_channels.filter((x) => x !== c) })} /></td>
+                          <td className="px-3 py-1.5 pr-4"><input aria-label={`rename ${c}`} className="h-7 w-24 rounded-md border border-line bg-card px-1.5 font-mono text-[12px] focus:border-primary focus:outline-none" placeholder={c} value={cfg.channels.rename[c] ?? ""} onChange={(e) => { const r = { ...cfg.channels.rename }; if (e.target.value) r[c] = e.target.value; else delete r[c]; set("channels", { rename: r }); }} /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -526,18 +533,26 @@ function IcaPanel({ ica, exclude, onToggle, expId, onSources }: { ica: IcaView; 
         <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full text-[13px] tabular">
             <thead className="bg-subtle text-left text-ink-subtle">
-              <tr><th className="px-3 py-1.5">#</th><th>Expl. var.</th><th>Kurtosis</th><th>Frontal |r|</th><th>1–4 Hz</th><th>&gt;20 Hz</th><th className="pr-3">Remove</th></tr>
+              <tr>
+                <th className="px-3 py-2 font-semibold">#</th>
+                <th className="px-3 py-2 font-semibold whitespace-nowrap text-right">Expl. var.</th>
+                <th className="px-3 py-2 font-semibold whitespace-nowrap text-right">Kurtosis</th>
+                <th className="px-3 py-2 font-semibold whitespace-nowrap text-right">Frontal |r|</th>
+                <th className="px-3 py-2 font-semibold whitespace-nowrap text-right">1–4 Hz</th>
+                <th className="px-3 py-2 font-semibold whitespace-nowrap text-right">&gt;20 Hz</th>
+                <th className="px-3 py-2 pr-4 font-semibold whitespace-nowrap text-right">Remove</th>
+              </tr>
             </thead>
             <tbody>
               {d.components.map((c) => (
-                <tr key={c.index} onClick={() => setSel(c.index)} className={classNames("cursor-pointer border-t border-line hover:bg-surface", sel === c.index && "bg-primary-soft/50")}>
-                  <td className="px-3 py-1 font-bold">IC{c.index}</td>
-                  <td>{c.explained_variance !== null ? `${(c.explained_variance * 100).toFixed(1)} %` : "—"}</td>
-                  <td>{c.kurtosis.toFixed(1)}</td>
-                  <td className={classNames((c.frontal_corr ?? 0) > 0.6 && "font-bold text-warning")}>{c.frontal_corr?.toFixed(2) ?? "—"}</td>
-                  <td>{(c.low_freq_ratio * 100).toFixed(0)} %</td>
-                  <td>{(c.high_freq_ratio * 100).toFixed(0)} %</td>
-                  <td className="pr-3" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`remove IC${c.index}`} className="accent-[var(--c-danger)]" checked={exclude.includes(c.index)} onChange={() => onToggle(c.index)} /></td>
+                <tr key={c.index} onClick={() => setSel(c.index)} className={classNames("cursor-pointer border-t border-line transition-colors hover:bg-surface", sel === c.index && "bg-primary-soft/50")}>
+                  <td className="px-3 py-1.5 font-bold">IC{c.index}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-right tabular">{c.explained_variance !== null ? `${(c.explained_variance * 100).toFixed(1)} %` : "—"}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-right tabular">{c.kurtosis.toFixed(1)}</td>
+                  <td className={classNames("px-3 py-1.5 whitespace-nowrap text-right tabular", (c.frontal_corr ?? 0) > 0.6 && "font-bold text-warning")}>{c.frontal_corr?.toFixed(2) ?? "—"}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-right tabular">{(c.low_freq_ratio * 100).toFixed(0)} %</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap text-right tabular">{(c.high_freq_ratio * 100).toFixed(0)} %</td>
+                  <td className="px-3 py-1.5 pr-4 text-right" onClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`remove IC${c.index}`} className="accent-[var(--c-danger)]" checked={exclude.includes(c.index)} onChange={() => onToggle(c.index)} /></td>
                 </tr>
               ))}
             </tbody>

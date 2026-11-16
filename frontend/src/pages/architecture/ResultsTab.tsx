@@ -165,16 +165,25 @@ function ResultsView({ exp, data, onReevaluate, busy }: { exp: Experiment; data:
         <CardBody className="space-y-5">
           <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-[13.5px] tabular">
-              <thead className="bg-subtle text-left text-ink-subtle"><tr><th className="px-3 py-2">Fold</th><th>Training acc.</th><th>Validation bal. acc.</th><th>Test bal. acc.</th><th>Test n</th><th className="pr-3">Checkpoint · epoch</th></tr></thead>
+              <thead className="bg-subtle text-left text-ink-subtle">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Fold</th>
+                  <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Training acc.</th>
+                  <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Validation bal. acc.</th>
+                  <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Test bal. acc.</th>
+                  <th className="px-3 py-2 font-semibold text-right whitespace-nowrap">Test n</th>
+                  <th className="px-3 py-2 pr-4 font-semibold whitespace-nowrap">Checkpoint · epoch</th>
+                </tr>
+              </thead>
               <tbody>
                 {splitRows.map((r) => (
-                  <tr key={r.fold} className="border-t border-line">
-                    <td className="px-3 py-1.5 font-bold">{r.fold + 1}</td>
-                    <td>{pct(r.train?.accuracy)}</td>
-                    <td>{pct(r.val?.balanced_accuracy)}</td>
-                    <td className="font-bold">{pct(r.test?.balanced_accuracy)}</td>
-                    <td>{r.test?.n ?? "—"}</td>
-                    <td className="pr-3"><Mono>{ev.checkpoints[r.fold]?.checkpoint_id}</Mono> · {ev.checkpoints[r.fold]?.selected_epoch}</td>
+                  <tr key={r.fold} className="border-t border-line hover:bg-surface/50">
+                    <td className="px-3 py-2 font-bold">{r.fold + 1}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap tabular">{pct(r.train?.accuracy)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap tabular">{pct(r.val?.balanced_accuracy)}</td>
+                    <td className="px-3 py-2 text-right font-bold whitespace-nowrap tabular">{pct(r.test?.balanced_accuracy)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap tabular">{r.test?.n ?? "—"}</td>
+                    <td className="px-3 py-2 pr-4 whitespace-nowrap"><Mono>{ev.checkpoints[r.fold]?.checkpoint_id}</Mono> · epoch {ev.checkpoints[r.fold]?.selected_epoch}</td>
                   </tr>
                 ))}
               </tbody>
@@ -196,24 +205,33 @@ function ResultsView({ exp, data, onReevaluate, busy }: { exp: Experiment; data:
         <CardBody>
           <div className="max-h-[480px] overflow-auto rounded-xl border border-line scrollbar-thin">
             <table className="w-full text-[13px] tabular">
-              <thead className="sticky top-0 bg-subtle text-left text-ink-subtle">
-                <tr><th className="px-3 py-2">Trial</th><th>Fold</th><th>Participant</th><th>Run</th><th>True</th><th>Predicted</th>{m.class_names.map((c) => <th key={c} className="px-1">p({c})</th>)}<th className="pr-3">Inspect</th></tr>
+              <thead className="sticky top-0 z-10 bg-subtle text-left text-ink-subtle">
+                <tr>
+                  <th className="px-3 py-2 font-semibold whitespace-nowrap">Trial</th>
+                  <th className="px-2.5 py-2 font-semibold whitespace-nowrap">Fold</th>
+                  <th className="px-2.5 py-2 font-semibold whitespace-nowrap">Participant</th>
+                  <th className="px-2.5 py-2 font-semibold whitespace-nowrap">Run</th>
+                  <th className="px-2.5 py-2 font-semibold whitespace-nowrap">True</th>
+                  <th className="px-2.5 py-2 font-semibold whitespace-nowrap">Predicted</th>
+                  {m.class_names.map((c) => <th key={c} className="px-2 py-2 font-semibold whitespace-nowrap">p({c})</th>)}
+                  <th className="px-3 py-2 pr-4 font-semibold whitespace-nowrap text-right">Inspect</th>
+                </tr>
               </thead>
               <tbody>
                 {shown.slice(0, 1000).map((p) => (
-                  <tr key={p.trial_id} className={classNames("border-t border-line", !p.correct && "bg-danger-soft/40")}>
-                    <td className="px-3 py-1 font-mono text-[12px]">{p.trial_id}</td>
-                    <td>{p.fold + 1}</td>
-                    <td>{p.group ?? "—"}</td>
-                    <td title={p.recording_id ?? ""}>{p.run ?? "—"}</td>
-                    <td>{p.true}</td>
-                    <td className={classNames("font-bold", p.correct ? "text-success" : "text-danger")}>{p.predicted}</td>
+                  <tr key={p.trial_id} className={classNames("border-t border-line transition-colors hover:bg-surface/50", !p.correct && "bg-danger-soft/40")}>
+                    <td className="px-3 py-1.5 font-mono text-[12px] whitespace-nowrap">{p.trial_id}</td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap">{p.fold + 1}</td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap">{p.group ?? "—"}</td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap" title={p.recording_id ?? ""}>{p.run ?? "—"}</td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap"><Badge tone="neutral">{p.true}</Badge></td>
+                    <td className="px-2.5 py-1.5 whitespace-nowrap"><Badge tone={p.correct ? "success" : "danger"}>{p.predicted}</Badge></td>
                     {p.probabilities.map((v, i) => (
-                      <td key={i} className="px-1">
-                        <div className="flex items-center gap-1.5"><div className="h-1.5 w-12 overflow-hidden rounded-full bg-subtle"><div className="h-full bg-primary" style={{ width: `${v * 100}%` }} /></div><span className="text-[11.5px]">{v.toFixed(2)}</span></div>
+                      <td key={i} className="px-2 py-1.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5"><div className="h-1.5 w-12 overflow-hidden rounded-full bg-subtle"><div className="h-full bg-primary" style={{ width: `${v * 100}%` }} /></div><span className="text-[11.5px] tabular">{v.toFixed(2)}</span></div>
                       </td>
                     ))}
-                    <td className="pr-3 whitespace-nowrap">
+                    <td className="px-3 py-1.5 pr-4 text-right whitespace-nowrap">
                       <button type="button" title="Signal Journey" aria-label={`Signal journey for ${p.trial_id}`} className="mr-1 rounded-md p-1 text-link hover:bg-primary-soft" onClick={() => navigate(`/architecture/journey?trial=${encodeURIComponent(p.trial_id)}`)}><Activity className="size-4" /></button>
                       <button type="button" title="Kernel Playground" aria-label={`Kernel playground for ${p.trial_id}`} className="rounded-md p-1 text-link hover:bg-primary-soft" onClick={() => navigate(`/architecture/kernels?trial=${encodeURIComponent(p.trial_id)}&fold=${p.fold}`)}><Grid3x3 className="size-4" /></button>
                     </td>
