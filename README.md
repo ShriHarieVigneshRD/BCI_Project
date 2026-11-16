@@ -8,28 +8,177 @@ trial. You can also break the architecture to see what changes, and compare expe
 Every number in the interface comes from real computation: actual preprocessing, actual PyTorch training, forward
 hooks on saved checkpoints, and metrics on held-out data. Nothing is simulated, and EEG data never leave your machine.
 
+
 ---
 
 ## Contents
 
-1. [Features](#features)
-2. [How it is built](#how-it-is-built)
-3. [Prerequisites](#prerequisites)
-4. [Installation](#installation)
-5. [Starting the app](#starting-the-app)
-6. [The workflow](#the-workflow)
-7. [Importing datasets](#importing-datasets)
-8. [Configuring preprocessing](#configuring-preprocessing)
-9. [Split strategies and what they measure](#split-strategies-and-what-they-measure)
-10. [Training and cross-validation](#training-and-cross-validation)
-11. [Inspecting a trained model](#inspecting-a-trained-model)
-12. [Comparing experiments](#comparing-experiments)
-13. [Exporting results](#exporting-results)
-14. [Running the tests](#running-the-tests)
-15. [Configuration (environment variables)](#configuration-environment-variables)
-16. [API overview](#api-overview)
-17. [Troubleshooting](#troubleshooting)
+**Getting started**
+
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [Starting the app](#starting-the-app)
+4. [Configuration (environment variables)](#configuration-environment-variables)
+5. [Running the tests](#running-the-tests)
+6. [Troubleshooting](#troubleshooting)
+
+**Using the platform**
+
+7. [Features](#features)
+8. [How it is built](#how-it-is-built)
+9. [The workflow](#the-workflow)
+10. [Importing datasets](#importing-datasets)
+11. [Configuring preprocessing](#configuring-preprocessing)
+12. [Split strategies and what they measure](#split-strategies-and-what-they-measure)
+13. [Training and cross-validation](#training-and-cross-validation)
+14. [Inspecting a trained model](#inspecting-a-trained-model)
+15. [Comparing experiments](#comparing-experiments)
+16. [Exporting results](#exporting-results)
+
+**Reference**
+
+17. [API overview](#api-overview)
 18. [Scientific limitations and known constraints](#scientific-limitations-and-known-constraints)
+
+---
+
+## Prerequisites
+
+- **[uv](https://docs.astral.sh/uv/)** ≥ 0.5. It installs Python 3.11 automatically if needed.
+- **Node.js** ≥ 20 and npm (tested with Node 24).
+- *Optional:* an NVIDIA GPU with a recent driver for CUDA training. The CUDA build targets CUDA 13.0 wheels
+  (`torch 2.14.1+cu130`). Everything also runs on the CPU.
+- About 6 GB of free disk space for the CUDA build of PyTorch, or about 1 GB for the CPU build.
+
+
+## Installation
+
+The diagram shows the full installation path; the commands follow.
+
+```mermaid
+flowchart LR
+    A["Install prerequisites<br/>uv, Node.js 20+"] --> B{"GPU available?"}
+    B -->|yes| C["uv sync --extra cuda"]
+    B -->|no| D["uv sync --extra cpu"]
+    C --> E["cd frontend<br/>npm ci"]
+    D --> E
+    E --> F["npm run build<br/>creates frontend/dist"]
+    F --> G["Start the app<br/>scripts/start.* or manual"]
+    G --> H["Open http://127.0.0.1:8000"]
+```
+
+```bash
+# 1. Backend (pick ONE PyTorch build; both are pinned in backend/uv.lock)
+cd backend
+uv sync --extra cuda        # NVIDIA GPU
+# uv sync --extra cpu       # CPU only
+
+# 2. Frontend
+cd ../frontend
+npm ci                      # exact versions from package-lock.json
+npm run build               # produces frontend/dist, served by the backend
+```
+
+> **Important:** PyTorch is an *extra*, so always pass the same `--extra cuda|cpu` to every `uv sync` and `uv run`
+> command. Otherwise uv may remove torch from the environment.
+
+If your system drive is short on space, point uv's cache elsewhere first, e.g. `set UV_CACHE_DIR=E:\uv-cache`
+(PowerShell: `$env:UV_CACHE_DIR="E:\uv-cache"`).
+
+
+## Starting the app
+
+**One command** (installs pinned dependencies, builds the frontend once and serves everything on one port):
+
+```powershell
+scripts\start.ps1                 # Windows; auto-detects CUDA via nvidia-smi
+scripts\start.ps1 -Torch cpu      # force the CPU build
+```
+```bash
+scripts/start.sh                  # macOS / Linux / Git Bash  (scripts/start.sh cpu  to force CPU)
+```
+
+Then open **http://127.0.0.1:8000**.
+
+**Manually:**
+
+```bash
+cd frontend && npm run build
+cd ../backend && uv run --extra cuda python -m app.main      # http://127.0.0.1:8000
+```
+
+**Development mode** (hot reload; the Vite dev server proxies `/api` to the backend):
+
+```bash
+cd backend  && uv run --extra cuda uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd frontend && npm run dev                                       # http://127.0.0.1:5173
+```
+
+(`scripts\dev.ps1` opens both in separate windows.) Interactive API docs are at http://127.0.0.1:8000/docs.
+
+### What happens at start-up
+
+```mermaid
+flowchart LR
+    SU1["Create data directory"] --> SU2["Initialise SQLite registry<br/>(app.db)"]
+    SU2 --> SU3["Mark orphaned training / queued runs as failed"]
+    SU3 --> SU4["Recover interrupted imports"]
+    SU4 --> SU5["Start background training worker"]
+    SU5 --> SU6["Serve API and built frontend<br/>on 127.0.0.1:8000"]
+```
+
+
+## Configuration (environment variables)
+
+All settings are optional. See `.env.example`. A `.env` file at the project root is read automatically.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `EEGNET_DATA_DIR` | `./data` | Data store (relative paths are resolved from the project root) |
+| `EEGNET_HOST` / `EEGNET_PORT` | `127.0.0.1` / `8000` | Bind address (localhost only by default) |
+| `EEGNET_MAX_UPLOAD_MB` | `1024` | Size limit of a single-request upload (legacy upload endpoint) |
+| `EEGNET_MAX_IMPORT_MB` | `20480` | Size limit of the files staged by one folder / multi-file import |
+| `EEGNET_IMPORT_ROOTS` | *(unset)* | Optional list of folders (separated by `;` on Windows, `:` elsewhere) that *Use local folder path* may read from. Unset = any local folder that passes the safety checks |
+| `EEGNET_CORS_ORIGINS` | Vite dev origins | Allowed origins in development |
+
+
+## Running the tests
+
+```bash
+cd backend  && uv run --extra cuda pytest          # 86 tests (use --extra cpu on CPU installs)
+cd frontend && npm test                            # Vitest: theme modes, navigation, workflow gating, import dialog & review
+cd frontend && npm run typecheck                   # strict TypeScript
+```
+
+The backend suite covers the scientific core (shape propagation vs PyTorch, receptive fields checked against input
+gradients, max-norm), every file format, every split strategy and the leakage checks, preprocessing validation and
+training-only fitting, the lifecycle state machine, real training, failure and cancellation, corrupt checkpoints,
+activation and kernel provenance, Architecture Breaker immutability, results gating, export metadata, and an
+end-to-end workflow on a small SYNTHETIC continuous dataset. Tests use an isolated temporary data directory and run on
+the CPU.
+
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `ModuleNotFoundError: torch` or torch disappeared | Run `uv sync --extra cuda` (or `cpu`) and always pass the same `--extra` to `uv run`. |
+| Header shows **CPU** although you have a GPU | Install the CUDA build (`uv sync --extra cuda`) and update the NVIDIA driver (CUDA 13.0 support). Check with `uv run --extra cuda python -c "import torch; print(torch.cuda.is_available())"`. |
+| `CUDA out of memory` | Lower the batch size, or choose *Device: CPU* in the Training Simulator. |
+| Blank page at :8000 | Build the frontend (`cd frontend && npm run build`) or use `scripts/start.*`. |
+| `address already in use` | Another server is on the port. Set `EEGNET_PORT`, or stop the other process. |
+| Upload rejected: "Sampling rate is required" | Enter the sampling rate in the upload dialog (NumPy/CSV without `sfreq`/`time`). |
+| EEGLAB: "companion data file (.fdt) … not uploaded" | Select the `.set` and the `.fdt` together. |
+| Participant-level options are disabled | The dataset has no participant IDs for every trial. Set them per recording in the Dataset Review (**Revise import** for an existing dataset) or include `groups`/`participant`. |
+| Review shows "no events" for a recording | Its event file was not matched. Name it like the recording (`sub-01_run-1_eeg.edf` → `sub-01_run-1_events.tsv`) and place it in the same folder, then rescan. Unmatched event files are listed as a warning. |
+| Too many classes after import (one per marker text) | Open **Event mapping** and set timestamps / free-text markers to *Ignore*, or map start/end markers to *Segment start / end*. A wildcard rule changes many events at once. |
+| "Local folder paths can only be imported from this machine" | The local-path option works only when the browser runs on the same machine as the backend. Use *Select dataset folder* instead. |
+| "Epoching cannot proceed" | The continuous data have no event markers. Add annotations, a stim channel, a `marker` column or an `_events.tsv` file. |
+| Learned tools stay locked after training | Open the Training Simulator. The verification checklist shows what failed; restore the file and **Re-verify**, or retrain. |
+| "Results are stale" | Settings changed after training. Retrain for the current settings. The earlier run and its artifacts stay in the registry (Experiments & Exports → artifact manifest and run history). |
+| ICA warns about drifts | Use a high-pass of at least 1 Hz before ICA. |
+| The C: drive fills up during install | Set `UV_CACHE_DIR` to another drive before `uv sync`. |
+
 
 ---
 
@@ -71,6 +220,7 @@ indicator, and a System / Light / Dark theme selector. The theme choice is saved
 - **Explicitly synthetic test data.** A motor-imagery-like generator for demos and automated tests, labelled
   **SYNTHETIC** everywhere it appears, including exports.
 
+
 ## How it is built
 
 ```
@@ -102,63 +252,202 @@ indicator, and a System / Light / Dark theme selector. The theme choice is saved
   `experiments/<id>/` (split manifests, ICA reference, `runs/<run>/fold<k>/` with checkpoint, learned transform,
   partition and activations, plus evaluation artifacts), and `exports/`.
 
-## Prerequisites
+### Backend request and data flow
 
-- **[uv](https://docs.astral.sh/uv/)** ≥ 0.5. It installs Python 3.11 automatically if needed.
-- **Node.js** ≥ 20 and npm (tested with Node 24).
-- *Optional:* an NVIDIA GPU with a recent driver for CUDA training. The CUDA build targets CUDA 13.0 wheels
-  (`torch 2.14.1+cu130`). Everything also runs on the CPU.
-- About 6 GB of free disk space for the CUDA build of PyTorch, or about 1 GB for the CPU build.
+The routers hand requests to the services layer, which orchestrates the core computation and data layers and persists everything under `data/`.
 
-## Installation
+```mermaid
+flowchart TD
+    subgraph Startup["Startup (main.py lifespan)"]
+        SU1["mkdir data_dir"]
+        SU2["repo.db() — init SQLite (app.db)"]
+        SU3["recover_orphans() — mark orphaned training/queued runs as failed"]
+        SU4["recover_interrupted() — recover interrupted imports"]
+        SU5["manager.start() — start background training worker thread"]
+        SU1 --> SU2 --> SU3 --> SU4 --> SU5
+    end
 
-```bash
-# 1. Backend (pick ONE PyTorch build; both are pinned in backend/uv.lock)
-cd backend
-uv sync --extra cuda        # NVIDIA GPU
-# uv sync --extra cpu       # CPU only
+    subgraph Routers["FastAPI Routers /api/*"]
+        RS["system.py<br/>GET /health, /meta/formats, /meta/lifecycle"]
+        RD["datasets.py<br/>CRUD, /upload, /synthetic, /trials, /signal, /manifest, /export, /compatibility"]
+        RI["imports.py<br/>POST /imports → plan → files → scan → manifest → import → DELETE"]
+        RM["models.py<br/>/presets, /validate, /coordinate, /configs"]
+        RE["experiments.py<br/>lifecycle CRUD + all experiment sub-routes"]
+        RX["exports.py<br/>GET/download export bundles"]
+    end
 
-# 2. Frontend
-cd ../frontend
-npm ci                      # exact versions from package-lock.json
-npm run build               # produces frontend/dist, served by the backend
+    subgraph Services["Services Layer"]
+        SX["experiments.py<br/>• create_experiment<br/>• attach_dataset<br/>• preview_split / save_split<br/>• validate_preprocessing / save_preprocessing / run_preprocessing<br/>• fit_ica_reference<br/>• save_architecture<br/>• start_training<br/>• capabilities()  ← key: derives UI permissions from State"]
+        SJ["jobs.py<br/>JobManager + ProgressHub<br/>• single worker thread<br/>• execute_run() — full training loop orchestration<br/>• SSE event publish"]
+        SA["artifacts.py<br/>• verify_and_update() — 8-check gate<br/>• manifest()"]
+        SI["inspection.py<br/>• trial_list<br/>• journey (layer activations)<br/>• kernels<br/>• convolution (MAC arithmetic)<br/>• arena (depthwise/separable demo)<br/>• breaker (before/after diff)<br/>• spawn_variant"]
+        SEV["evaluation.py<br/>• evaluate() — test set metrics<br/>• results()<br/>• predictions()"]
+        SC["compare.py<br/>• side-by-side experiment comparison"]
+        SPV["preview.py<br/>• live preprocessing preview (40-recording sample)<br/>• ica_view"]
+        SDS["datasets.py<br/>• validate / save dataset records<br/>• UploadRejected handling"]
+        SIM["imports.py<br/>• ImportSession management<br/>• ImportConflict / ImportRejected"]
+        SRP["repo.py<br/>• SQLite access layer<br/>• get/save experiment, run, dataset, artifact<br/>• transition() — enforces lifecycle TRANSITIONS map<br/>• NotFound"]
+        SYS["system.py<br/>• health info (device, CUDA, worker status)"]
+        SEXP["exports.py<br/>• build_export() → ZIP with manifest.json + HTML report"]
+    end
+
+    subgraph Core["Core Computation (core/)"]
+        CE["eegnet.py<br/>• ArchitectureConfig (Pydantic)<br/>• EEGNet (nn.Module) — 15 layer types<br/>• compute_architecture() → layer table<br/>• validate_architecture() → shape + param check<br/>• forward pass cross-check vs analytic"]
+        CT["training.py<br/>• TrainingConfig (Pydantic)<br/>• train_fold() — real PyTorch loop<br/>  Adam/AdamW/SGD, schedulers,<br/>  early stopping, best-epoch restore,<br/>  class weighting, label smoothing<br/>• Cancelled exception"]
+        CPP["preprocessing.py<br/>• PreprocessingConfig<br/>• EpochSet (memory-mapped arrays)<br/>• LearnedTransform — ICA + normalisation<br/>  fitted on training partition only<br/>• run_pipeline() — MNE/SciPy pipeline<br/>• PreprocessingError"]
+        CS["splits.py<br/>• SplitConfig<br/>• compute_split() → SplitAssignment<br/>  (random, group, kfold variants)<br/>• integrity_report() — overlap checks<br/>• validation_split()<br/>• SplitError"]
+        CM["metrics.py<br/>• accuracy, balanced_accuracy,<br/>  precision, recall, F1, confusion matrix,<br/>  ROC-AUC (when valid)"]
+        CTR["tracing.py<br/>• run_trace() — forward hooks on EEGNet<br/>• TraceResult (outputs dict per layer)<br/>• used for Journey + Kernel Playground"]
+    end
+
+    subgraph DataLayer["Data Layer (data/)"]
+        DE["entities.py<br/>• BIDS + common name pattern parsing<br/>• participant / session / run / task IDs"]
+        DSC["scanner.py<br/>• walk nested folders<br/>• build DatasetManifest<br/>• identify recordings vs event files"]
+        DM["manifest.py<br/>• DatasetManifest schema<br/>• event association rules"]
+        DIM["importer.py<br/>• staged import execution<br/>• DatasetImportError"]
+        DL["loaders.py<br/>• EDF/BDF/GDF (MNE)<br/>• BrainVision (.vhdr+.vmrk)<br/>• FIF raw/epochs<br/>• EEGLAB .set/.fdt<br/>• NPY / NPZ<br/>• CSV / TSV (epoched + continuous)"]
+        DST["store.py<br/>• canonical per-recording arrays<br/>• memory-mapped cache (data/cache/preprocessed/)"]
+        SYN["synthetic.py<br/>• motor-imagery-like generator<br/>• mu/beta desync, pink noise, blinks, spikes"]
+    end
+
+    subgraph Storage["Storage (data/ directory)"]
+        DB["app.db — SQLite registry<br/>(experiments, runs, datasets, artifacts)"]
+        DS["datasets/ — canonical arrays + events + metadata"]
+        DIM2["imports/ — staged import sessions"]
+        DUP["uploads/ — original uploaded files"]
+        DC["cache/preprocessed/ — deterministic fingerprinted outputs"]
+        DEX["experiments/:id/runs/:run/fold:k/<br/>• checkpoint.pt<br/>• transform/ (learned ICA+norm)<br/>• partition.json<br/>• activations.npz"]
+        DEXP["exports/ — ZIP bundles"]
+    end
+
+    Routers --> Services
+    Services --> Core
+    Services --> DataLayer
+    Core --> Storage
+    DataLayer --> Storage
+    Services --> Storage
 ```
 
-> **Important:** PyTorch is an *extra*, so always pass the same `--extra cuda|cpu` to every `uv sync` and `uv run`
-> command. Otherwise uv may remove torch from the environment.
+### Frontend state and data flow
 
-If your system drive is short on space, point uv's cache elsewhere first, e.g. `set UV_CACHE_DIR=E:\uv-cache`
-(PowerShell: `$env:UV_CACHE_DIR="E:\uv-cache"`).
+Server state lives in TanStack Query, UI state in Zustand, and training progress arrives over Server-Sent Events.
 
-## Starting the app
+```mermaid
+flowchart LR
+    subgraph ZustandStore["Zustand Store (ui.ts)<br/>persisted in localStorage"]
+        theme["theme: system|light|dark"]
+        expId["currentExperimentId: string|null"]
+        uploadOpen["uploadOpen: boolean"]
+        newExpOpen["newExperimentOpen: boolean"]
+        importAttach["importAttachTo / importSessionId"]
+    end
 
-**One command** (installs pinned dependencies, builds the frontend once and serves everything on one port):
+    subgraph TanStackQuery["TanStack Query (server state cache)"]
+        QH["useHealth() — /api/health<br/>• device (CPU/CUDA)<br/>• training worker status"]
+        QD["useDatasets() — /api/datasets"]
+        QExp["useExperiment(id) — /api/experiments/:id<br/>• polls every 1.5s when busy"]
+        QArch["useArchitecture(id) — /api/experiments/:id/architecture"]
+        QTrials["useTrials(id, fold)"]
+        QCand["useCandidates(id)"]
+    end
 
-```powershell
-scripts\start.ps1                 # Windows; auto-detects CUDA via nvidia-smi
-scripts\start.ps1 -Torch cpu      # force the CPU build
+    subgraph SSE["Server-Sent Events"]
+        SSEQ["useTrainingStream(expId, runId)<br/>• EventSource /api/experiments/:id/progress<br/>• emits: snapshot | status | log | epoch | fold_done | done | failed | cancelled"]
+    end
+
+    ZustandStore -->|currentExperimentId| TanStackQuery
+    TanStackQuery -->|data| Pages
+    SSEQ -->|StreamState| TrainingTab
+    Pages -->|mutations via api.post/put/del| Backend["FastAPI Backend"]
+    Backend -->|JSON| TanStackQuery
+    Backend -->|SSE stream| SSEQ
 ```
-```bash
-scripts/start.sh                  # macOS / Linux / Git Bash  (scripts/start.sh cpu  to force CPU)
+
+<details>
+<summary><b>Frontend component tree</b> (click to expand)</summary>
+
+```mermaid
+flowchart TD
+    main["main.tsx<br/>(React root mount)"]
+    App["App.tsx<br/>QueryClientProvider + RouterProvider"]
+    main --> App
+
+    AppShell["AppShell.tsx<br/>(root layout wrapper)<br/>• useThemeSync<br/>• useCurrentExperiment<br/>• Outlet"]
+    App --> AppShell
+
+    Header["Header.tsx<br/>• Logo<br/>• ExperimentSwitcher<br/>• DeviceBadge<br/>• Upload Dataset btn<br/>• Start New Experiment btn<br/>• ThemeSelector"]
+    PrimaryNav["Nav.tsx<br/>• Dataset & Splits<br/>• Preprocessing<br/>• Architecture<br/>• Battle Arena<br/>• Tensor Detective<br/>• Experiments"]
+    ImportDatasetModal["ImportDatasetModal.tsx<br/>(Portal / Dialog)<br/>• multi-step import flow<br/>• folder / files / local path / synthetic"]
+    NewExperimentModal["NewExperimentModal.tsx<br/>(Portal / Dialog)<br/>• choose dataset<br/>• inherit settings"]
+    AppShell --> Header
+    AppShell --> PrimaryNav
+    AppShell --> ImportDatasetModal
+    AppShell --> NewExperimentModal
+
+    subgraph Pages["Pages (Outlet children)"]
+        DSP["DatasetSplitsPage<br/>/dataset<br/>• attach dataset<br/>• split strategy picker<br/>• integrity report<br/>• candidates summary"]
+        PP["PreprocessingPage<br/>/preprocessing<br/>• channel selector<br/>• filter controls<br/>• ICA panel<br/>• live raw/processed preview<br/>• spectra charts<br/>• Run & validate"]
+        AEP["ArchitectureExplorerPage<br/>/architecture/:tab"]
+        BAP["BattleArenaPage<br/>/arena<br/>• variant list<br/>• side-by-side comparison<br/>• per-class metrics"]
+        TDP["TensorDetectivePage<br/>/tensors<br/>• step-by-step shape trace<br/>• coordinate detective<br/>• flatten map"]
+        EXP["ExperimentsPage<br/>/experiments<br/>• search / filter list<br/>• export ZIP builder<br/>• artifact manifest<br/>• lifecycle log"]
+    end
+
+    AppShell --> Pages
+
+    subgraph ArchTabs["ArchitectureExplorerPage Tabs"]
+        CT["ConfigTab<br/>• ArchForm (params)<br/>• ArchitectureDiagram SVG<br/>• LayerTable<br/>• version history"]
+        JT["JourneyTab<br/>• trial picker (TrialPicker)<br/>• per-layer activation charts<br/>• EChart heatmaps<br/>• trained vs untrained label"]
+        TT["TrainingTab<br/>• TrainingForm (hyperparams)<br/>• pre-training checklist<br/>• Start/Cancel buttons<br/>• live loss/accuracy curves (LinePlot)<br/>• SSE stream (useTrainingStream)<br/>• artifact verification checklist"]
+        KT["KernelTab<br/>Locks: needs artifacts_ready<br/>• fold / trial / layer selectors<br/>• learned weights display<br/>• MAC arithmetic verification<br/>• kernel gallery + freq response<br/>• Convolution Arena sub-panel"]
+        BT["BreakerTab<br/>Locks: needs artifacts_ready<br/>• param editor<br/>• before/after shape diff<br/>• spawn variant experiment"]
+        RT["ResultsTab<br/>Locks: needs artifacts_ready<br/>• Evaluate Model action<br/>• confusion matrix<br/>• per-class table<br/>• prediction table"]
+    end
+
+    AEP --> CT
+    AEP --> JT
+    AEP --> TT
+    AEP --> KT
+    AEP --> BT
+    AEP --> RT
+
+    subgraph SharedComponents["Shared / UI Components"]
+        LC["LifecycleBanner.tsx<br/>• reads exp.state<br/>• shows next step"]
+        RE["RequireExperiment.tsx<br/>• gate for pages needing an experiment"]
+        DR["DatasetReview.tsx<br/>• import review table<br/>• event mapping<br/>• include/exclude recordings"]
+        ArchF["ArchForm.tsx"]
+        ArchD["ArchitectureDiagram.tsx (SVG)"]
+        LT["LayerTable.tsx"]
+        Charts["Charts.tsx<br/>LinePlot, HeatmapChart, BarChart"]
+        EChart["EChart.tsx<br/>(Apache ECharts wrapper)"]
+        TP["TrialPicker.tsx<br/>• fold selector<br/>• participant filter"]
+        Buttons["Button.tsx"]
+        Cards["Card.tsx, Stat"]
+        Chips["Chip.tsx, StateChip, Dot, Badge"]
+        Fields["Field.tsx<br/>NumberField, SelectField, Toggle"]
+        Misc["Misc.tsx<br/>EmptyState, LockedState, Alert,<br/>PageHeader, Tabs, Checklist, Mono"]
+    end
 ```
 
-Then open **http://127.0.0.1:8000**.
+</details>
 
-**Manually:**
+### Key design decisions
 
-```bash
-cd frontend && npm run build
-cd ../backend && uv run --extra cuda python -m app.main      # http://127.0.0.1:8000
-```
+| Area | Decision | Rationale |
+|---|---|---|
+| **State machine** | 16 states, backend-owned, `TRANSITIONS` map | Prevents UI from lying about what's available |
+| **Training gate** | 8-check `verify_and_update()` | Ensures no fake learned-weight displays |
+| **Worker thread** | Single `JobManager` with `queue.Queue` | API stays responsive; cancellation via `threading.Event` |
+| **SSE vs WebSocket** | SSE (`text/event-stream`) | One-way progress: simpler, works through proxies |
+| **TanStack Query** | `refetchInterval: 1500ms when busy` | Experiment state stays in sync without SSE for non-training states |
+| **EpochSet** | Memory-mapped numpy arrays | Large datasets never fully in RAM |
+| **Preprocessing fingerprint** | SHA-256 of `PreprocessingConfig` JSON | Cache invalidation without DB queries |
+| **ICA across folds** | Spatial-pattern correlation matching | Avoids fitting ICA inside the fold loop (expensive) |
+| **Architecture immutability** | Editing creates `v2`, original locked | Trained experiments never mutated |
+| **Leakage guards** | `_fold_data()` has explicit set-intersection checks | Runtime assertion, not just convention |
+| **Synthetic data** | Labelled **SYNTHETIC** everywhere | Cannot be mistaken for real results |
+| **Local-only binding** | `127.0.0.1` default; EEG never sent externally | Privacy-first design |
 
-**Development mode** (hot reload; the Vite dev server proxies `/api` to the backend):
-
-```bash
-cd backend  && uv run --extra cuda uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-cd frontend && npm run dev                                       # http://127.0.0.1:5173
-```
-
-(`scripts\dev.ps1` opens both in separate windows.) Interactive API docs are at http://127.0.0.1:8000/docs.
 
 ## The workflow
 
@@ -179,6 +468,69 @@ cd frontend && npm run dev                                       # http://127.0.
 
 The banner at the top of each workflow page shows the backend's lifecycle state and the next required step.
 
+### Workflow at a glance
+
+```mermaid
+flowchart TD
+    N["Start new experiment"] --> S1["1. Dataset & Splits<br/>attach, choose split, confirm"]
+    S1 --> S2["2. Preprocessing Studio<br/>configure, run & validate pipeline"]
+    S2 --> S3["3. Architecture Configuration<br/>validate & save"]
+    S3 --> S4["EEG Signal Journey<br/>(untrained, labelled)"]
+    S3 --> S5["Training Simulator<br/>start training"]
+    S5 --> G{"Artifact verification<br/>gate passed?"}
+    G -->|no| S5
+    G -->|yes| S6["Results & Predictions<br/>Evaluate model"]
+    G -->|yes| S7["Kernel & Convolution Playground"]
+    G -->|yes| S8["Architecture Breaker"]
+    S8 -.->|Create variant experiment| N
+```
+
+### Experiment lifecycle
+
+The backend owns the lifecycle state machine; the UI only reflects the state it reports. Any change to an upstream setting after training rolls the experiment back and marks the run stale.
+
+```mermaid
+stateDiagram-v2
+    [*] --> created
+    created --> dataset_required
+    created --> dataset_ready
+    dataset_required --> dataset_ready
+    dataset_ready --> split_configured
+    split_configured --> preprocessing_configured
+    preprocessing_configured --> preprocessing_completed
+    preprocessing_completed --> architecture_configured
+
+    architecture_configured --> training_queued
+    training_queued --> training
+    training_queued --> training_cancelled
+    training_queued --> training_failed
+
+    training --> training_completed
+    training --> training_failed
+    training --> training_cancelled
+
+    training_failed --> training_queued
+    training_cancelled --> training_queued
+
+    training_completed --> artifacts_ready
+    training_completed --> artifacts_incomplete
+
+    artifacts_incomplete --> artifacts_ready
+    artifacts_incomplete --> training_queued
+
+    artifacts_ready --> evaluation_running
+    artifacts_ready --> artifacts_incomplete
+    artifacts_ready --> training_queued
+
+    evaluation_running --> evaluation_completed
+    evaluation_running --> artifacts_ready
+
+    evaluation_completed --> evaluation_running
+    evaluation_completed --> artifacts_incomplete
+    evaluation_completed --> training_queued
+```
+
+
 ## Importing datasets
 
 Use **Upload dataset** in the header (or *Import another dataset* when starting an experiment). The dialog offers three
@@ -190,6 +542,28 @@ ways to bring in a study, plus generated synthetic data:
 | **Select multiple files** | Pick individual files (e.g. a few EDFs and their `_events.tsv`). They are scanned exactly like a folder. |
 | **Use local folder path** | Type the folder's path on this computer. The backend reads the folder in place (read-only) and copies nothing until you import. See *Local path safety* below. |
 | Synthetic test data | Generated, explicitly labelled **SYNTHETIC** motor-imagery-like data for testing. |
+
+### Import flow
+
+```mermaid
+flowchart TD
+    UI["User: Upload Dataset dialog<br/>or 'Import another dataset'"]
+    UI --> MODE{"Choose mode"}
+    MODE -->|folder| M1["POST /imports (mode=folder)<br/>→ ImportSession created"]
+    MODE -->|files| M2["POST /imports (mode=files)<br/>→ ImportSession created"]
+    MODE -->|local_path| M3["POST /imports (mode=local_path)<br/>• loopback-only safety check<br/>• no UNC/drive-root paths"]
+    MODE -->|synthetic| M4["POST /api/datasets/synthetic<br/>→ generates SYNTHETIC dataset directly"]
+
+    M1 --> PLAN["POST /imports/:sid/plan<br/>• scanner.py walks nested folders<br/>• entities.py extracts BIDS IDs<br/>• builds DatasetManifest<br/>• headers only (lazy signal load)"]
+    M2 --> PLAN
+    M3 --> PLAN
+
+    PLAN --> UPLOAD["POST /imports/:sid/files<br/>(multipart, only relevant files)<br/>or local_path: skip upload"]
+    UPLOAD --> SCAN["POST /imports/:sid/scan<br/>• per-file progress events<br/>• associate event files by name"]
+    SCAN --> REVIEW["PUT /imports/:sid/manifest<br/>• user corrections:<br/>  - participant/session/run/task IDs<br/>  - event mapping (class / segment / ignore)<br/>  - include/exclude recordings<br/>  - channel & sfreq reconciliation policy"]
+    REVIEW --> IMPORT["POST /imports/:sid/import<br/>• importer.py: load signals + events<br/>• validate (NaN, units, channels, labels)<br/>• write canonical arrays to datasets/<br/>• register DatasetRecord in app.db"]
+    IMPORT --> DONE["Dataset ready<br/>Attach to experiment<br/>→ state: DATASET_READY"]
+```
 
 ### Scanning
 
@@ -274,10 +648,26 @@ and the participant / session / run / task of every recording, pre-filled from t
 **Synthetic data:** *Upload dataset → Synthetic test data* generates labelled SYNTHETIC motor-imagery-like data
 (mu/beta desynchronisation over C3/C4/Cz, pink noise, line noise, blinks on Fp1/Fp2, occasional spikes).
 
+
 ## Configuring preprocessing
 
 The pipeline runs in a fixed, documented order. Continuous data go through channels → notch → filter → resample →
 epoch → baseline → rejection → *ICA* → *normalisation*. Already-epoched data use crop in place of epoch.
+
+```mermaid
+flowchart LR
+    RAW["Raw EEG recordings<br/>(EpochSet from cache or run_pipeline)"]
+    RAW --> CH["Channels<br/>• include/exclude<br/>• mark bad<br/>• rename/map"]
+    CH --> NOTCH["Notch filter<br/>50/60 Hz<br/>(continuous only)"]
+    NOTCH --> FILT["Band-pass / High-pass / Low-pass<br/>FIR (firwin) or IIR Butterworth<br/>phase: zero / minimum / causal"]
+    FILT --> RESAMP["Polyphase resampling<br/>anti-alias FIR<br/>updated time axes"]
+    RESAMP --> EPOCH["Epoching<br/>• Fixed window at event markers<br/>• Sliding windows in segments<br/>(whole segment stays in one partition)"]
+    EPOCH --> BASE["Baseline correction<br/>• window inside epoch"]
+    BASE --> REJECT["Artifact rejection<br/>• BAD segment annotations<br/>• peak-to-peak amplitude<br/>• flat-signal threshold<br/>(rule-based: no fitting → all partitions)"]
+    REJECT --> ICA["ICA (optional)<br/>• FastICA / Infomax<br/>• fitted on TRAINING partition only<br/>• large sets: seeded subset ~25M samples<br/>• cross-fold: spatial correlation matching"]
+    ICA --> NORM["Normalization<br/>• per-channel z-score<br/>• robust (median/IQR)<br/>• global z-score<br/>• per-trial z-score<br/>• fitted on TRAINING, applied to val/test"]
+    NORM --> TENSOR["Final tensor [N, 1, C, T]<br/>written to cache/preprocessed/<br/>keyed by PreprocessingConfig fingerprint"]
+```
 
 | Stage | Options | Notes |
 |---|---|---|
@@ -313,6 +703,7 @@ start/end segments, a notch at the recorded power-line frequency, bad channels f
 channels left out. **Apply suggestions** copies them into the pipeline; nothing is applied silently. The preview also
 reports candidates, kept trials and windows per participant and per recording.
 
+
 ## Split strategies and what they measure
 
 | Strategy | Question it answers |
@@ -328,6 +719,7 @@ Candidate IDs include the recording (`sub-01_ses-01_task-mi_run-2:e0007`), and t
 dataset manifest, so group splits keep every recording of a participant together. With sliding windows, the split
 assigns whole segments, never single windows. The integrity report is recomputed whenever the dataset or its
 manifest changes.
+
 
 ## Training and cross-validation
 
@@ -358,7 +750,86 @@ The **Training Simulator** controls:
 - **Resuming** an interrupted run is not supported. A run interrupted by a server restart is marked failed on the
   next start-up, and you retry with a new run.
 
+### Training execution flow
+
+```mermaid
+flowchart TD
+    POST["POST /api/experiments/:id/train<br/>→ start_training()"]
+    POST --> SNAP["Create RunRecord (snapshot of<br/>arch + prep + split + class_names)"]
+    SNAP --> QUEUE["manager.submit(exp_id, run_id)<br/>→ state: TRAINING_QUEUED"]
+    QUEUE --> SSE["SSE stream opens<br/>GET /api/experiments/:id/progress"]
+    SSE --> WORKER["Worker thread: execute_run()"]
+
+    WORKER --> CANCEL_CHECK{"cancel.is_set()?"}
+    CANCEL_CHECK -->|yes| CANCELLED["state: TRAINING_CANCELLED<br/>SSE: cancelled event"]
+    CANCEL_CHECK -->|no| LOAD["Load EpochSet, SplitAssignment,<br/>ICA reference, class_names"]
+
+    LOAD --> FOLDLOOP["For each fold k"]
+    FOLDLOOP --> PARTS["_fold_data()<br/>• fit / val / test partition IDs<br/>• leakage guards (group overlap check)"]
+    PARTS --> TRANSFORM["LearnedTransform.fit()<br/>(ICA + normalization on training rows only)"]
+    TRANSFORM --> TRAIN["train_fold()<br/>PyTorch loop per epoch:<br/>• forward pass → loss → backward<br/>• optimizer step + max-norm clamp<br/>• on_epoch() → SSE epoch event<br/>• early stopping on val<br/>• restore best checkpoint"]
+    TRAIN --> SAVE_CKPT["torch.save() checkpoint.pt<br/>• state_dict + arch + class_names<br/>• sha256 registered as ArtifactRecord"]
+    SAVE_CKPT --> SAVE_TRANS["lt.save() transform/<br/>(learned ICA+norm)"]
+    SAVE_TRANS --> TRACE["run_trace() forward hooks<br/>on representative trials"]
+    TRACE --> SAVE_ACT["np.savez_compressed() activations.npz"]
+    SAVE_ACT --> FOLDLOOP
+
+    FOLDLOOP -->|all folds done| MANIFEST["Write run manifest.json<br/>state: TRAINING_COMPLETED"]
+    MANIFEST --> VERIFY["artifacts.verify_and_update()<br/>8 checks:<br/>1. terminal state<br/>2. all checkpoints exist<br/>3. sha256 match<br/>4. arch + data + history recorded<br/>5. activations exist<br/>6. strict reload succeeds<br/>7. forward pass reproducible<br/>8. activations match hooks"]
+    VERIFY -->|pass| READY["state: ARTIFACTS_READY<br/>SSE: done (artifacts_ready=true)"]
+    VERIFY -->|fail| INCOMPLETE["state: ARTIFACTS_INCOMPLETE<br/>SSE: done (artifacts_ready=false)"]
+
+    TRAIN -->|Cancelled exception| CANCEL2["state: TRAINING_CANCELLED"]
+    TRAIN -->|Exception| FAILED["state: TRAINING_FAILED<br/>SSE: failed event"]
+```
+
+### Artifact verification gate
+
+Kernel inspection, the Architecture Breaker and evaluation unlock only when every check passes.
+
+```mermaid
+flowchart LR
+    TC["Training Completed"] --> G1["✓ Run reached<br/>terminal state"]
+    G1 --> G2["✓ All checkpoint.pt<br/>files exist"]
+    G2 --> G3["✓ sha256 of each<br/>checkpoint matches<br/>ArtifactRecord"]
+    G3 --> G4["✓ Architecture, data<br/>provenance, history<br/>& seed recorded"]
+    G4 --> G5["✓ activations.npz<br/>exists per fold"]
+    G5 --> G6["✓ Checkpoint reloads<br/>with strict=True"]
+    G6 --> G7["✓ Forward pass with<br/>hooks reproduces<br/>persisted activations"]
+    G7 --> G8{"All pass?"}
+    G8 -->|yes| AR["state: ARTIFACTS_READY<br/>Kernel Playground +<br/>Breaker + Results UNLOCK"]
+    G8 -->|no| AI["state: ARTIFACTS_INCOMPLETE<br/>Shows which check failed<br/>Offers Re-verify or Retrain"]
+```
+
+
 ## Inspecting a trained model
+
+### EEGNet architecture (as built)
+
+Every tool below inspects this network. Layer sizes, kernel lengths, pooling and activation are configurable; the diagram shows the structure.
+
+```mermaid
+flowchart TD
+    INPUT["Input: [B, 1, C, T]<br/>e.g. [32, 1, 22, 256]"]
+    INPUT --> TConv["Temporal Conv2d<br/>• [1 → F1] × (1, temporal_kernel)<br/>• padding='same' or 'valid'<br/>• no bias<br/>• groups=1"]
+    TConv --> BN1["BatchNorm2d(F1)<br/>• momentum, eps configurable"]
+    BN1 --> SConv["Depthwise Spatial Conv2d<br/>• [F1 → F1×D] × (C, 1)<br/>• groups=F1 (one kernel per channel)<br/>• max_norm on weights<br/>• no bias"]
+    SConv --> BN2["BatchNorm2d(F1×D)"]
+    BN2 --> ACT1["Activation<br/>(ELU / ReLU / GELU / SiLU)"]
+    ACT1 --> POOL1["AvgPool2d / MaxPool2d<br/>× (1, pool1_kernel)<br/>stride = pool1_stride"]
+    POOL1 --> DROP1["Dropout / SpatialDropout2d<br/>p = dropout"]
+    DROP1 --> DWConv["Separable: Depthwise Temporal Conv2d<br/>• [F1×D → F1×D] × (1, separable_kernel)<br/>• groups = F1×D<br/>• padding='same' or 'valid'"]
+    DWConv --> PWConv["Separable: Pointwise Conv2d<br/>• [F1×D → F2] × (1, 1)<br/>• groups = 1"]
+    PWConv --> BN3["BatchNorm2d(F2)"]
+    BN3 --> ACT2["Activation"]
+    ACT2 --> POOL2["AvgPool2d / MaxPool2d<br/>× (1, pool2_kernel)<br/>stride = pool2_stride"]
+    POOL2 --> DROP2["Dropout"]
+    DROP2 --> FLAT["Flatten<br/>→ [B, F2 × T_out]"]
+    FLAT --> CLS["Linear classifier<br/>[F2 × T_out → n_classes]<br/>• max_norm on weights<br/>• no bias"]
+    CLS --> LOGITS["Logits → Softmax → Probabilities"]
+```
+
+### Inspection tools
 
 - **EEG Signal Journey:** the uploaded signal, processed epoch, model input, every layer's activations (labelled as
   activations, not voltages) and the logits/probabilities for any trial. It uses the trained checkpoint, or an
@@ -388,6 +859,7 @@ The **Training Simulator** controls:
 - **Trial pickers** across the app (Journey, Kernel Playground, Preprocessing preview) filter by participant and
   partition and show each trial's participant and run.
 
+
 ## Comparing experiments
 
 In the **Hyperparameter Battle Arena**:
@@ -402,6 +874,7 @@ fingerprints, validation curves, final test metrics, confusion matrices, per-cla
 Disagreement is computed only when the test trials and protocol are identical. Warnings appear when datasets, class
 mappings, preprocessing or protocols differ. Configurations are ranked by **validation** balanced accuracy; test
 metrics are labelled *final* and should not be used to choose hyperparameters.
+
 
 ## Exporting results
 
@@ -425,33 +898,8 @@ In **Experiments & Exports**, select an experiment and tick what to include. The
 Raw EEG data are **never** included in bundles. **Export dataset (explicit)** downloads a dataset's canonical arrays
 separately. Every chart in the UI also has a *Save as PNG* button.
 
-## Running the tests
 
-```bash
-cd backend  && uv run --extra cuda pytest          # 86 tests (use --extra cpu on CPU installs)
-cd frontend && npm test                            # Vitest: theme modes, navigation, workflow gating, import dialog & review
-cd frontend && npm run typecheck                   # strict TypeScript
-```
-
-The backend suite covers the scientific core (shape propagation vs PyTorch, receptive fields checked against input
-gradients, max-norm), every file format, every split strategy and the leakage checks, preprocessing validation and
-training-only fitting, the lifecycle state machine, real training, failure and cancellation, corrupt checkpoints,
-activation and kernel provenance, Architecture Breaker immutability, results gating, export metadata, and an
-end-to-end workflow on a small SYNTHETIC continuous dataset. Tests use an isolated temporary data directory and run on
-the CPU.
-
-## Configuration (environment variables)
-
-All settings are optional. See `.env.example`. A `.env` file at the project root is read automatically.
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `EEGNET_DATA_DIR` | `./data` | Data store (relative paths are resolved from the project root) |
-| `EEGNET_HOST` / `EEGNET_PORT` | `127.0.0.1` / `8000` | Bind address (localhost only by default) |
-| `EEGNET_MAX_UPLOAD_MB` | `1024` | Size limit of a single-request upload (legacy upload endpoint) |
-| `EEGNET_MAX_IMPORT_MB` | `20480` | Size limit of the files staged by one folder / multi-file import |
-| `EEGNET_IMPORT_ROOTS` | *(unset)* | Optional list of folders (separated by `;` on Windows, `:` elsewhere) that *Use local folder path* may read from. Unset = any local folder that passes the safety checks |
-| `EEGNET_CORS_ORIGINS` | Vite dev origins | Allowed origins in development |
+---
 
 ## API overview
 
@@ -476,26 +924,164 @@ Typed (Pydantic) routes under `/api`:
 Lifecycle conflicts return **409**, invalid configurations **422**, and unknown IDs **404**. The artifact manifest
 uses relative storage keys; filesystem paths are never exposed.
 
-## Troubleshooting
+<details>
+<summary><b>Which page or component calls which endpoint</b> (click to expand)</summary>
 
-| Symptom | Fix |
-|---|---|
-| `ModuleNotFoundError: torch` or torch disappeared | Run `uv sync --extra cuda` (or `cpu`) and always pass the same `--extra` to `uv run`. |
-| Header shows **CPU** although you have a GPU | Install the CUDA build (`uv sync --extra cuda`) and update the NVIDIA driver (CUDA 13.0 support). Check with `uv run --extra cuda python -c "import torch; print(torch.cuda.is_available())"`. |
-| `CUDA out of memory` | Lower the batch size, or choose *Device: CPU* in the Training Simulator. |
-| Blank page at :8000 | Build the frontend (`cd frontend && npm run build`) or use `scripts/start.*`. |
-| `address already in use` | Another server is on the port. Set `EEGNET_PORT`, or stop the other process. |
-| Upload rejected: "Sampling rate is required" | Enter the sampling rate in the upload dialog (NumPy/CSV without `sfreq`/`time`). |
-| EEGLAB: "companion data file (.fdt) … not uploaded" | Select the `.set` and the `.fdt` together. |
-| Participant-level options are disabled | The dataset has no participant IDs for every trial. Set them per recording in the Dataset Review (**Revise import** for an existing dataset) or include `groups`/`participant`. |
-| Review shows "no events" for a recording | Its event file was not matched. Name it like the recording (`sub-01_run-1_eeg.edf` → `sub-01_run-1_events.tsv`) and place it in the same folder, then rescan. Unmatched event files are listed as a warning. |
-| Too many classes after import (one per marker text) | Open **Event mapping** and set timestamps / free-text markers to *Ignore*, or map start/end markers to *Segment start / end*. A wildcard rule changes many events at once. |
-| "Local folder paths can only be imported from this machine" | The local-path option works only when the browser runs on the same machine as the backend. Use *Select dataset folder* instead. |
-| "Epoching cannot proceed" | The continuous data have no event markers. Add annotations, a stim channel, a `marker` column or an `_events.tsv` file. |
-| Learned tools stay locked after training | Open the Training Simulator. The verification checklist shows what failed; restore the file and **Re-verify**, or retrain. |
-| "Results are stale" | Settings changed after training. Retrain for the current settings. The earlier run and its artifacts stay in the registry (Experiments & Exports → artifact manifest and run history). |
-| ICA warns about drifts | Use a high-pass of at least 1 Hz before ICA. |
-| The C: drive fills up during install | Set `UV_CACHE_DIR` to another drive before `uv sync`. |
+```mermaid
+flowchart TD
+    subgraph FE["Frontend Portals (HTTP calls)"]
+        direction TB
+
+        H1["GET /api/health"]
+        H2["GET /api/meta/formats"]
+        H3["GET /api/meta/lifecycle"]
+
+        D1["GET /api/datasets"]
+        D2["GET /api/datasets/:id"]
+        D3["GET /api/datasets/:id/trials"]
+        D4["GET /api/datasets/:id/signal"]
+        D5["GET /api/datasets/:id/manifest"]
+        D6["POST /api/datasets/:id/revise"]
+        D7["GET /api/datasets/:id/compatibility/:other"]
+        D8["POST /api/datasets/synthetic"]
+        D9["DELETE /api/datasets/:id"]
+
+        I1["POST /api/imports<br/>(mode: folder|files|local_path)"]
+        I2["GET /api/imports/:sid"]
+        I3["POST /api/imports/:sid/plan"]
+        I4["POST /api/imports/:sid/files<br/>(multipart upload)"]
+        I5["POST /api/imports/:sid/scan"]
+        I6["PUT /api/imports/:sid/manifest<br/>(event mapping, corrections)"]
+        I7["POST /api/imports/:sid/import"]
+        I8["DELETE /api/imports/:sid"]
+
+        M1["GET /api/models/presets"]
+        M2["POST /api/models/validate"]
+        M3["POST /api/models/coordinate"]
+        M4["GET/POST /api/models/configs"]
+
+        E1["GET /api/experiments"]
+        E2["POST /api/experiments"]
+        E3["GET /api/experiments/:id"]
+        E4["PATCH /api/experiments/:id"]
+        E5["POST /api/experiments/:id/duplicate"]
+        E6["POST /api/experiments/:id/variants"]
+        E7["DELETE /api/experiments/:id"]
+        E8["GET /api/experiments/:id/events"]
+
+        S1["PUT /api/experiments/:id/dataset"]
+        S2["GET /api/experiments/:id/candidates"]
+        S3["POST /api/experiments/:id/split/preview"]
+        S4["PUT /api/experiments/:id/split"]
+        S5["GET /api/experiments/:id/split"]
+
+        P1["POST /api/experiments/:id/preprocessing/validate"]
+        P2["POST /api/experiments/:id/preprocessing/preview"]
+        P3["PUT /api/experiments/:id/preprocessing"]
+        P4["POST /api/experiments/:id/preprocessing/run"]
+        P5["POST /api/experiments/:id/preprocessing/ica"]
+        P6["GET /api/experiments/:id/preprocessing/ica"]
+        P7["GET /api/experiments/:id/preprocessing/defaults"]
+
+        A1["GET /api/experiments/:id/architecture"]
+        A2["PUT /api/experiments/:id/architecture"]
+        A3["PUT /api/experiments/:id/training-config"]
+
+        T1["POST /api/experiments/:id/train"]
+        T2["GET /api/experiments/:id/progress (SSE)"]
+        T3["POST /api/experiments/:id/cancel"]
+        T4["GET /api/experiments/:id/runs"]
+        T5["GET /api/experiments/:id/runs/:runId"]
+
+        ART1["GET /api/experiments/:id/artifacts"]
+        ART2["POST /api/experiments/:id/artifacts/verify"]
+        ART3["GET /api/experiments/:id/checkpoints/:ckpt/download"]
+
+        INS1["GET /api/experiments/:id/trials"]
+        INS2["GET /api/experiments/:id/journey"]
+        INS3["GET /api/experiments/:id/kernels"]
+        INS4["POST /api/experiments/:id/convolution"]
+        INS5["POST /api/experiments/:id/arena"]
+        INS6["POST /api/experiments/:id/breaker"]
+        INS7["POST /api/experiments/:id/breaker/spawn"]
+        INS8["GET /api/experiments/:id/pretraining-checks"]
+
+        R1["POST /api/experiments/:id/evaluate"]
+        R2["GET /api/experiments/:id/results"]
+        R3["GET /api/experiments/:id/predictions"]
+
+        X1["GET /api/experiments/:id/export/items"]
+        X2["POST /api/experiments/:id/export"]
+        X3["GET /api/exports/:eid"]
+        X4["GET /api/exports/:eid/download"]
+        X5["POST /api/experiments/compare"]
+    end
+
+    subgraph PageMap["Page / Component that calls each group"]
+        Header --> H1
+        ImportDatasetModal --> I1
+        ImportDatasetModal --> I2
+        ImportDatasetModal --> I3
+        ImportDatasetModal --> I4
+        ImportDatasetModal --> I5
+        ImportDatasetModal --> I6
+        ImportDatasetModal --> I7
+        DatasetReview --> D6
+        DatasetSplitsPage --> D1
+        DatasetSplitsPage --> D2
+        DatasetSplitsPage --> S1
+        DatasetSplitsPage --> S2
+        DatasetSplitsPage --> S3
+        DatasetSplitsPage --> S4
+        DatasetSplitsPage --> S5
+        PreprocessingPage --> P1
+        PreprocessingPage --> P2
+        PreprocessingPage --> P3
+        PreprocessingPage --> P4
+        PreprocessingPage --> P5
+        PreprocessingPage --> P6
+        PreprocessingPage --> P7
+        ConfigTab --> A1
+        ConfigTab --> A2
+        ConfigTab --> M2
+        TrainingTab --> T1
+        TrainingTab --> T2
+        TrainingTab --> T3
+        TrainingTab --> ART1
+        TrainingTab --> ART2
+        TrainingTab --> INS8
+        JourneyTab --> INS1
+        JourneyTab --> INS2
+        KernelTab --> INS1
+        KernelTab --> INS3
+        KernelTab --> INS4
+        KernelTab --> INS5
+        BreakerTab --> INS6
+        BreakerTab --> INS7
+        ResultsTab --> R1
+        ResultsTab --> R2
+        ResultsTab --> R3
+        BattleArenaPage --> E5
+        BattleArenaPage --> E6
+        BattleArenaPage --> X5
+        TensorDetectivePage --> M3
+        TensorDetectivePage --> A1
+        ExperimentsPage --> E1
+        ExperimentsPage --> E3
+        ExperimentsPage --> E4
+        ExperimentsPage --> E5
+        ExperimentsPage --> E7
+        ExperimentsPage --> X1
+        ExperimentsPage --> X2
+        ExperimentsPage --> X3
+        ExperimentsPage --> X4
+        NewExperimentModal --> E2
+        NewExperimentModal --> E1
+    end
+```
+
+</details>
+
 
 ## Scientific limitations and known constraints
 
@@ -522,3 +1108,4 @@ uses relative storage keys; filesystem paths are never exposed.
 - **Reports** are HTML only (no PDF). Plot exports in bundles are PNG and SVG; UI charts export PNG.
 - The ROC-AUC and average precision are **undefined** when a class is missing from the evaluated trials. The app
   reports this instead of a number. Balanced accuracy averages recall over the classes present.
+
